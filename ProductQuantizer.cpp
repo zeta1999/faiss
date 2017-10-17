@@ -166,48 +166,103 @@ ProductQuantizer::ProductQuantizer ():
 void ProductQuantizer::set_derived_values () {
     // quite a few derived values
     FAISS_THROW_IF_NOT (d % M == 0);
+
+    // dsub is the length (in components) of the subvectors.
     dsub = d / M;
+
+    // Convert nbits_per_idx to bytes per index.
     byte_per_idx = (nbits + 7) / 8;
+
+    // code_size appears to be the size in bytes of an encoded vector.
+    // Each subvector becomes one idx value.
     code_size = byte_per_idx * M;
+
+    // ksub appears to be the number of centroids to learn.
+    // 1 << x is equal to 2^x. So for 8-bit indeces, you can learn 256
+    // centroids.
     ksub = 1 << nbits;
+
+    // 'centroids' needs to have space to hold:
+    //  number of subvectors * subvector length * number of centroids
     centroids.resize (d * ksub);
+
     verbose = false;
     train_type = Train_default;
 }
 
-
+/**
+ * ========= set_params =========
+ * This function sets the subvector centroids to use for quantization.
+ * It's called as part of 'train' to store the centroids once learned.
+ */
 void ProductQuantizer::set_params (const float * centroids_, int m)
 {
   memcpy (get_centroids(m, 0), centroids_,
             ksub * dsub * sizeof (centroids_[0]));
 }
 
-
+/**
+ * ======== init_hypercube ========
+ * Initialize the centroids for k-means.
+ *
+ * This initialization method initializes all of the centroids to the mean
+ * vector, but it modifies the first 'nbits' components to ensure that all
+ * initial centroids are different.
+ *
+ * Specifically, it either adds or subtracts the maximum mean value from the
+ * component mean. Again, this is just for the first 'nbits' components. It's
+ * the first 'nbits' components because 'nbits' determines the number of
+ * centroids, so we have to modify at least the first 'nbits' components in
+ * order to ensure that all initial centroids are unique.
+ */
 static void init_hypercube (int d, int nbits,
                             int n, const float * x,
                             float *centroids)
 {
 
+    // Accumulate the total value for each component of the vectors, as
+    // part of calculating the mean of all the vectors.
     std::vector<float> mean (d);
+    // For each vector...
     for (int i = 0; i < n; i++)
+        // For each dimension...
         for (int j = 0; j < d; j++)
+            // Accumuate the total component value for component 'j'
             mean [j] += x[i * d + j];
 
+    // Determine which component has the highest mean value.
     float maxm = 0;
+    // For each component...
     for (int j = 0; j < d; j++) {
+        // Calculate the component's mean.
         mean [j] /= n;
+
+        // Record the highest mean encountered.
         if (fabs(mean[j]) > maxm) maxm = fabs(mean[j]);
     }
 
+    // The 'mean' vector now holds the component means.
+
+    // We will initialize all of the centroids to the mean values.
+    // However, we will also modify the first 'nbits' components of each
+    // centroid by either adding or subtracting the maximum mean value. this
+    // ensures that all centroids receive a different initial value.
+
+    // For each centroid...
     for (int i = 0; i < (1 << nbits); i++) {
+        // Set 'cent' as a pointer to centroid 'i'.
         float * cent = centroids + i * d;
+
+        // For the first nbits components of the centroid...
         for (int j = 0; j < nbits; j++)
+            // Initialize component 'j' of this centroid to the mean value
+            // plus or minus the maximum mean.
             cent[j] = mean [j] + (((i >> j) & 1) ? 1 : -1) * maxm;
+        // For the remaining components, initialize each component to its mean
+        // value.
         for (int j = nbits; j < d; j++)
             cent[j] = mean [j];
     }
-
-
 }
 
 static void init_hypercube_pca (int d, int nbits,
@@ -247,14 +302,25 @@ void ProductQuantizer::train (int n, const float * x)
             }
         }
 
+        // xslice will hold a given subvector across all dataset vectors.
         float * xslice = new float[n * dsub];
         ScopeDeleter<float> del (xslice);
+
+        // For each subsection...
         for (int m = 0; m < M; m++) {
+            // Copy over the subsection 'm' of all dataset vectors, one at a
+            // time.
+
+            // For each vector...
             for (int j = 0; j < n; j++)
+                // Copy subsection m of dataset vector j into xslice.
                 memcpy (xslice + j * dsub,
                         x + j * d + m * dsub,
                         dsub * sizeof(float));
 
+            // Construct a clustering object with the dimensionality set to the
+            // subvector length and the number of clusters set to the maximum
+            // possible given nbits_per_idx.
             Clustering clus (dsub, ksub, cp);
 
             // we have some initialization for the centroids
@@ -262,6 +328,7 @@ void ProductQuantizer::train (int n, const float * x)
                 clus.centroids.resize (dsub * ksub);
             }
 
+            // Centroid initilization, I believe?
             switch (final_train_type) {
             case Train_hypercube:
                 init_hypercube (dsub, nbits, n, xslice,
@@ -283,8 +350,13 @@ void ProductQuantizer::train (int n, const float * x)
                 clus.verbose = true;
                 printf ("Training PQ slice %d/%zd\n", m, M);
             }
+
+            // Run clustering on the subvectors in subsection 'm'.
+            // Clustering is performed with brute force L2.
             IndexFlatL2 index (dsub);
             clus.train (n, xslice, index);
+
+            // Store the learned centroids.
             set_params (clus.centroids.data(), m);
         }
 

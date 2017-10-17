@@ -34,16 +34,31 @@ int main() {
     }
 
 
+    // I believe this is the number of inverted lists to create? That is, how
+    // many clusters to divide the dataset into?
     int nlist = 100;
+
+    // It looks like 'k' is just a search-time paramter--dictating how many
+    // nearest neighbors to return.
     int k = 4;
-    int m = 8;                             // bytes per vector
+
+    // 'm' is the number of subsections to divide the vectors into.
+    int m = 8;
     faiss::IndexFlatL2 quantizer(d);       // the other index
+
+    // The final value '8' is the number of bits to use for the codes, which
+    // dictates the number of clusters to learn for each subvector.
     faiss::IndexIVFPQ index(&quantizer, d, nlist, m, 8);
+
     // here we specify METRIC_L2, by default it performs inner-product search
+
+    // 'train' is a method of the ProductQuantizer object.
     index.train(nb, xb);
     index.add(nb, xb);
 
     {       // sanity check
+        // 'I' holds the indeces for the five queries and 'D' holds the
+        // distances.
         long *I = new long[k * 5];
         float *D = new float[k * 5];
 

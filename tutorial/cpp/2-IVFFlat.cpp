@@ -34,7 +34,7 @@ int main() {
         xq[d * i] += i / 1000.;
     }
 
-
+    // 'nlist' is the number of clusters to organize the dataset into.
     int nlist = 100;
     int k = 4;
 

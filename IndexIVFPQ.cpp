@@ -42,6 +42,20 @@ namespace faiss {
  * IndexIVFPQ implementation
  ******************************************/
 
+/**
+ * IndexIVFPQ inherits from IndexIVF, so we care calling the parent constructor
+ * below.
+ *
+ * We are also calling the constructor a ProductQuantizer object.
+ *
+ * Parameters:
+ *   quantizer - The base index to build on. Usually FlatL2?
+ *           d - The number of dimensions in the vector.
+ *       nlist - Number of inverted lists to scan.
+ *           M - Number of subquantizers (number of vector subsections)
+ * nbits_per_idx - The codebook size, dictated by the code size in bits.
+ *
+ */
 IndexIVFPQ::IndexIVFPQ (Index * quantizer, size_t d, size_t nlist,
                         size_t M, size_t nbits_per_idx):
     IndexIVF (quantizer, d, nlist, METRIC_L2),
