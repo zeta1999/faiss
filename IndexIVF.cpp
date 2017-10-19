@@ -90,15 +90,32 @@ void IndexIVF::make_direct_map (bool new_maintain_direct_map)
     maintain_direct_map = new_maintain_direct_map;
 }
 
-
+/**
+ * ======== search ========
+ * Parameters:
+ *   n    The number of query vectors in 'x'.
+ *   x    The query vectors.
+ *   k    The number of neighbors to find.
+ *   distances  The matrix to hold calculated distances.
+ *   labels  The matrix to hold the database vector indeces of the neighbors.
+ */ 
 void IndexIVF::search (idx_t n, const float *x, idx_t k,
                          float *distances, idx_t *labels) const
 {
+    // 'idx' is a matrix of partition ids. One row per query vector, and one
+    // column to hold the index of each of the 'nprobe' closest partitions.
     long * idx = new long [n * nprobe];
     ScopeDeleter<long> del (idx);
+    
+    // 'coarse_dis' is a matrix of distances, calculated between the query 
+    // vectors and the partition centroids. One row per query vector, and one
+    // column to hold the distance for each of the 'nprobe' closest partitions.
     float * coarse_dis = new float [n * nprobe];
     ScopeDeleter<float> del2 (coarse_dis);
 
+    // The quantizer is already loaded with the partition centroids. We are 
+    // going to search for the closest partition centroids for each of the 'n'
+    // query vectors in 'x'.
     quantizer->search (n, x, nprobe, coarse_dis, idx);
 
     search_preassigned (n, x, k, idx, coarse_dis,

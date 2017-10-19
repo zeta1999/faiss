@@ -40,7 +40,11 @@ namespace faiss {
 
 /*****************************************
  * IndexIVFPQ implementation
- ******************************************/
+ *****************************************
+ * At search time, you first go through IndexIVF::search which does the probing
+ * of the dataset partitions, and then it passes the results down to 
+ * IndexIVFPQ::search_preassigned, which does the search within the partitions.
+ */
 
 /**
  * IndexIVFPQ inherits from IndexIVF, so we care calling the parent constructor
@@ -941,7 +945,16 @@ void IndexIVFPQStats::reset () {
 }
 
 
-
+/**
+ * ======== search_preassigned ========
+ * This function is called from IndexIVF::search (which performs the coarse 
+ * search) in order to perform the search within the selected dataset 
+ * partitions.
+ * 
+ * Parameters:
+ *   nx   - The number of query vectors in 'qx'.
+ *
+ */
 void IndexIVFPQ::search_preassigned (idx_t nx, const float *qx, idx_t k,
                                      const idx_t *keys,
                                      const float *coarse_dis,
@@ -962,11 +975,20 @@ void IndexIVFPQ::search_preassigned (idx_t nx, const float *qx, idx_t k,
         uint64_t scan_cycles = 0;
         uint64_t heap_cycles = 0;
 
+        // For each of the query vectors...
 #pragma omp  for
         for (size_t i = 0; i < nx; i++) {
+            // 'qi' is a pointer to the next query vector.
             const float *qi = qx + i * d;
+            
+            // 'keysi' is a pointer to the list of partition ids to search.
+            // There are 'nprobe' partitions to search.
             const long * keysi = keys + i * nprobe;
+            
+            // 'coarse_dis_i' is a pointer to the list of distances between
+            // the query vector and the nearest partition centroids.
             const float *coarse_dis_i = coarse_dis + i * nprobe;
+            
             float * heap_sim = res.get_val (i);
             long * heap_ids = res.get_ids (i);
 
